@@ -4,7 +4,6 @@ import yt_dlp
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 import uuid
-from pytubefix import YouTube
 
 app = Flask(__name__)
 CORS(app)
@@ -28,8 +27,13 @@ def download():
         'outtmpl': out_template,
         'quiet': True,
         'no_warnings': True,
-        'cookiefile': 'cookies.txt',
+        # Обход блокировки YouTube
+        'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
     }
+
+    # Если файл cookies.txt есть, используем его
+    if os.path.exists('cookies.txt'):
+        ydl_opts['cookiefile'] = 'cookies.txt'
 
     if fmt == 'mp3':
         ydl_opts['format'] = 'bestaudio/best'
@@ -50,27 +54,7 @@ def download():
             filename = base + (".mp3" if fmt == 'mp3' else ".mp4")
         return jsonify({"success": True, "file": os.path.basename(filename)})
     except Exception as e:
-        print(f"yt-dlp failed: {e}, trying pytubefix...")
-        try:
-            yt = YouTube(url)
-            if fmt == 'mp3':
-                stream = yt.streams.get_audio_only()
-            else:
-                stream = yt.streams.get_highest_resolution()
-            
-            out_name = f"{uid}_{yt.title}"
-            out_path = stream.download(output_path=DOWNLOAD_DIR, filename=out_name)
-            
-            if fmt == 'mp3':
-                final_path = os.path.splitext(out_path)[0] + ".mp3"
-                subprocess.run(["ffmpeg", "-y", "-i", out_path, final_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                if os.path.exists(out_path):
-                    os.remove(out_path)
-                return jsonify({"success": True, "file": os.path.basename(final_path)})
-            
-            return jsonify({"success": True, "file": os.path.basename(out_path)})
-        except Exception as e2:
-            return jsonify({"error": f"Ошибка: {e} | Резерв: {e2}"}), 500
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/downloads/<filename>')
 def serve_file(filename):
